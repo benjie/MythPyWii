@@ -240,3 +240,5 @@ class WiiMyth:
 # Instantiate our class, and start.
 inst = WiiMyth()
 inst.main()
+
+#Unknown change
