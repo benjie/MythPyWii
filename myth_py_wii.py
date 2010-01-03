@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 """
+MythPyWii v17
+By Benjie Gillam http://www.benjiegillam.com/mythpywii/
+
+Changelog:
+  v17: power saving code (thanks to Matthew Zimmerman)
+
 Copyright (c) 2008, Benjie Gillam
 All rights reserved.
 
@@ -11,9 +17,8 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-# By Benjie Gillam http://www.benjiegillam.com/mythpywii/
 
-import cwiid, time, StringIO, sys, asyncore, socket
+import cwiid, time, StringIO, sys, asyncore, socket, os
 from math import log, floor, atan, sqrt, cos, exp
 
 # Note to self - list of good documentation:
@@ -42,11 +47,7 @@ class MythSocket(asyncore.dispatcher):
 		self.owner = owner
 		asyncore.dispatcher.__init__(self)
 		self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-		
 		self.connect(("localhost", 6546))
-	def handle_connect(self):
-	  pass
-		#print "Connected"
 	def handle_close(self):
 		print "Mythfrontend connection closed"
 		self.owner.socket_disconnect()
@@ -56,10 +57,9 @@ class MythSocket(asyncore.dispatcher):
 			self.data = self.data + self.recv(8192)
 		except:
 			print """
-[ERROR] The connection to Mythfrontend failed - is it running? 
-  If so, do you have the socket interface enabled?
-  Please follow the instructions at
-    http://www.benjiegillam.com/mythpywii-installation/
+[ERROR] The connection to Mythfrontend failed - is it running?
+If so, do you have the socket interface enabled?
+Please follow the instructions at http://www.benjiegillam.com/mythpywii-installation/
 """
 			self.handle_close()
 			return
@@ -90,6 +90,7 @@ class MythSocket(asyncore.dispatcher):
 	def cmd(self, data, cb = None):
 		self.buffer += data + "\n"
 		self.callbacks.append(cb)
+		self.owner.lastaction = time.time()
 	def raw(self, data):
 		cmds = data.split("\n")
 		for cmd in cmds:
@@ -110,6 +111,7 @@ class WiiMyth:
 	state = {"acc":[0, 0, 1]}
 	lasttime = 0.0
 	laststate = {}
+	lastaction = 0.0
 	responsiveness = 0.15
 	firstPress = True
 	firstPressDelay = 0.5
@@ -121,12 +123,8 @@ class WiiMyth:
 		self.wii_calibration[1][axis] - self.wii_calibration[0][axis])
 	def socket_disconnect(self):
 		if self.wm is not None:
-			for a in range(8):
-				self.wm.rumble=1
-				time.sleep(.2)
-				self.wm.rumble=0
-				time.sleep(.2)
-			self.wm.led = cwiid.LED2_ON | cwiid.LED3_ON
+			#self.wm.led = cwiid.LED2_ON | cwiid.LED3_ON
+			print "About to close connection to the Wiimote"
 			self.wm.close()
 			self.wm = None
 		return
@@ -140,8 +138,10 @@ class WiiMyth:
 				self.ms.close()
 				self.ms = None
 			return None
-		self.ms = MythSocket(self)
+		if self.ms is None:
+			self.ms = MythSocket(self)
 		print "Connected to a wiimote :)"
+		self.lastaction = time.time()
 		self.wm.rumble=1
 		time.sleep(.2)
 		self.wm.rumble=0
@@ -310,10 +310,18 @@ class WiiMyth:
 					self.wm.rpt_mode = sum(self.reportvals[a] for a in self.report if self.report[a])
 					self.wm.enable(cwiid.FLAG_MESG_IFC | cwiid.FLAG_REPEAT_BTN)
 					self.wm.mesg_callback = self.wmcb
+					self.lastaction = time.time()
+					os.system("xset dpms force on")
+					print("Forcing on the display")
 				else:
 					print "Retrying... "
 					print
 			asyncore.loop(timeout=0, count=1)
+			if self.lastaction < time.time() - 2100:
+				#2100 seconds is 35 minutes
+				#1200 seconds is 20 minutes
+				self.socket_disconnect()
+				print "35 minutes has passed since last action, disconnecting Wiimote"
 			time.sleep(0.05)
 		print "Exited Safely"
 
