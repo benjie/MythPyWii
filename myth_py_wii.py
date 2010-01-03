@@ -48,7 +48,8 @@ class MythSocket(asyncore.dispatcher):
 	  pass
 		#print "Connected"
 	def handle_close(self):
-		print "Closed"
+		print "Mythfrontend connection closed"
+		self.owner.socket_disconnect()
 		self.close()
 	def handle_read(self):
 		try:
@@ -59,10 +60,8 @@ class MythSocket(asyncore.dispatcher):
   If so, do you have the socket interface enabled?
   Please follow the instructions at
     http://www.benjiegillam.com/mythpywii-installation/
-  
-  To re-try, hold down the power button on your wiimote to disconnect it.
 """
-			self.close()
+			self.handle_close()
 			return
 		while len(self.data)>0:
 			a = self.data.find(self.prompt)
@@ -120,6 +119,17 @@ class WiiMyth:
 	def wii_rel(self, v, axis):
 		return float(v - self.wii_calibration[0][axis]) / (
 		self.wii_calibration[1][axis] - self.wii_calibration[0][axis])
+	def socket_disconnect(self):
+		if self.wm is not None:
+			for a in range(8):
+				self.wm.rumble=1
+				time.sleep(.2)
+				self.wm.rumble=0
+				time.sleep(.2)
+			self.wm.led = cwiid.LED2_ON | cwiid.LED3_ON
+			self.wm.close()
+			self.wm = None
+		return
 	def wmconnect(self):
 		print "Please open Mythfrontend and then press 1&2 on the wiimote..."
 		try:
@@ -159,6 +169,8 @@ class WiiMyth:
 			else:
 				print "Unknown message!", message
 			laststate = self.laststate
+			#print "B: %d/%d %d          \r" % (state["buttons"],self.maxButtons,self.ms.ok()),
+			#sys.stdout.flush()
 			if ('buttons' in laststate) and (laststate['buttons'] <> state['buttons']):
 				if state['buttons'] == 0:
 					self.maxButtons = 0
@@ -170,7 +182,8 @@ class WiiMyth:
 				self.firstPress = True
 				if laststate['buttons'] == cwiid.BTN_B and not state['buttons'] == cwiid.BTN_B:
 					del state['BTN_B']
-					self.ms.cmd('play speed normal')
+					if not (state['buttons'] & cwiid.BTN_B):
+						self.ms.cmd('play speed normal')
 				if (laststate['buttons'] & cwiid.BTN_A and laststate['buttons'] & cwiid.BTN_B) and not (state['buttons'] & cwiid.BTN_A and state['buttons'] & cwiid.BTN_B):
 					del state['BTN_AB']
 					#self.ms.cmd('play speed normal')
@@ -234,9 +247,11 @@ class WiiMyth:
 					else:
 						speed = speed - laststate['BTN_AB']
 					if speed > 0:
-						cmd += abs(speed)*"key right\n"
+						cmd += (speed / 5) * "key up\n" # Floor is automatic
+						cmd += (speed % 5) * "key right\n"
 					elif speed < 0:
-						cmd += abs(speed)*"key left\n"
+						cmd += (-speed / 5) * "key down\n" # Floor is automatic
+						cmd += (-speed % 5) * "key left\n"
 					if speed <> 0:
 						self.wm.rumble=1
 						time.sleep(.05)
