@@ -20,6 +20,16 @@ from math import log, floor, atan, sqrt, cos, exp
 # cwiid: http://flx.proyectoanonimo.com/proyectos/cwiid/
 # myth telnet: http://www.mythtv.org/wiki/index.php/Telnet_socket
 
+def do_scale(input, max, divisor=None):
+	if divisor is None: divisor = max
+	if (input > 1): input = 1
+	if (input < -1): input = -1
+	input = int(input * divisor)
+	if input>max: input = max
+	elif input < -max: input = -max
+	return input
+
+
 class MythSocket(asyncore.dispatcher):
 	firstData = True
 	data = ""
@@ -87,7 +97,10 @@ class WiiMyth:
 	state = {"acc":[0, 0, 1]}
 	lasttime = 0.0
 	laststate = {}
-	responsiveness = 0.5
+	responsiveness = 0.15
+	firstPress = True
+	firstPressDelay = 0.5
+	maxButtons = 0
 	#wii_rel = lambda v, axis: float(v - self.wii_calibration[0][axis]) / (
 	#	self.wii_calibration[1][axis] - self.wii_calibration[0][axis])
 	def wii_rel(self, v, axis):
@@ -133,31 +146,47 @@ class WiiMyth:
 				print "Unknown message!", message
 			laststate = self.laststate
 			if ('buttons' in laststate) and (laststate['buttons'] <> state['buttons']):
-				if laststate['buttons'] & cwiid.BTN_B and not state['buttons'] & cwiid.BTN_B:
+				if state['buttons'] == 0:
+					self.maxButtons = 0
+				elif state['buttons'] < self.maxButtons:
+					continue
+				else:
+					self.maxButtons = state['buttons']
+				self.lasttime = 0
+				self.firstPress = True
+				if laststate['buttons'] == cwiid.BTN_B and not state['buttons'] == cwiid.BTN_B:
 					del state['BTN_B']
 					self.ms.cmd('play speed normal')
+				if (laststate['buttons'] & cwiid.BTN_A and laststate['buttons'] & cwiid.BTN_B) and not (state['buttons'] & cwiid.BTN_A and state['buttons'] & cwiid.BTN_B):
+					del state['BTN_AB']
+					#self.ms.cmd('play speed normal')
 			if self.ms.ok() and (self.wm is not None) and (state["buttons"] > 0) and (time.time() > self.lasttime+self.responsiveness):
 				self.lasttime = time.time()
+				wasFirstPress = False
+				if self.firstPress:
+					wasFirstPress = True
+					self.lasttime = self.lasttime + self.firstPressDelay
+					self.firstPress = False
 				# Stuff that doesn't need roll/etc calculations
-				if state["buttons"] & cwiid.BTN_HOME:
+				if state["buttons"] == cwiid.BTN_HOME:
 					self.ms.cmd('key escape')
-				if state["buttons"] & cwiid.BTN_A:
+				if state["buttons"] == cwiid.BTN_A:
 					self.ms.cmd('key enter')
-				if state["buttons"] & cwiid.BTN_MINUS:
+				if state["buttons"] == cwiid.BTN_MINUS:
 					self.ms.cmd('key d')
-				if state["buttons"] & cwiid.BTN_UP:
+				if state["buttons"] == cwiid.BTN_UP:
 					self.ms.cmd('key up')
-				if state["buttons"] & cwiid.BTN_DOWN:
+				if state["buttons"] == cwiid.BTN_DOWN:
 					self.ms.cmd('key down')
-				if state["buttons"] & cwiid.BTN_LEFT:
+				if state["buttons"] == cwiid.BTN_LEFT:
 					self.ms.cmd('key left')
-				if state["buttons"] & cwiid.BTN_RIGHT:
+				if state["buttons"] == cwiid.BTN_RIGHT:
 					self.ms.cmd('key right')
-				if state["buttons"] & cwiid.BTN_PLUS:
+				if state["buttons"] == cwiid.BTN_PLUS:
 					self.ms.cmd('key p')
-				if state["buttons"] & cwiid.BTN_1:
+				if state["buttons"] == cwiid.BTN_1:
 					self.ms.cmd('key i')
-				if state["buttons"] & cwiid.BTN_2:
+				if state["buttons"] == cwiid.BTN_2:
 					self.ms.cmd('key m')
 				# Do we need to calculate roll, etc?
 				# Currently only BTN_B needs this.
@@ -175,14 +204,33 @@ class WiiMyth:
 					pitch = atan(Y/Z*cos(roll))
 					#print "X: %f, Y: %f, Z: %f; R: %f, P: %f; B: %d    \r" % (X, Y, Z, roll, pitch, state["buttons"]),
 					sys.stdout.flush()
-				if state["buttons"] & cwiid.BTN_B:
-					speed = roll/3.14159
-					if (speed > 1): speed = 1
-					if (speed < -1): speed = -1
-					speed = int(speed * 13)
-					if abs(speed)>9:
-						if speed>0: speed = 9
-						else: speed = -9
+				if state["buttons"] & cwiid.BTN_B and state["buttons"] & cwiid.BTN_LEFT:
+					self.ms.cmd('play seek beginning')
+				if state["buttons"] & cwiid.BTN_B and state["buttons"] & cwiid.BTN_A:
+					speed=do_scale(roll/3.14159, 20, 25)
+					if (speed<-10): speed = -10
+					state['BTN_AB'] = speed
+					cmd = ""
+					# on first press,  press a,
+					# after then use the diff to press left/right
+					if not 'BTN_AB' in laststate:
+						# # query location
+						# Playback Recorded 00:04:20 of 00:25:31 1x 30210 2008-09-10T09:18:00 6523 /video/30210_20080910091800.mpg 25
+						cmd += "play speed normal\nkey a\n"#"play speed normal\n"
+					else:
+						speed = speed - laststate['BTN_AB']
+					if speed > 0:
+						cmd += abs(speed)*"key right\n"
+					elif speed < 0:
+						cmd += abs(speed)*"key left\n"
+					if speed <> 0:
+						self.wm.rumble=1
+						time.sleep(.05)
+						self.wm.rumble=0
+					if cmd is not None and cmd:
+						self.ms.raw(cmd)
+				if state["buttons"] == cwiid.BTN_B:
+					speed=do_scale(roll/3.14159, 8, 13)
 					state['BTN_B'] = speed
 					if not 'BTN_B' in laststate:
 						# # query location
@@ -240,5 +288,3 @@ class WiiMyth:
 # Instantiate our class, and start.
 inst = WiiMyth()
 inst.main()
-
-#Unknown change
