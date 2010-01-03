@@ -42,14 +42,28 @@ class MythSocket(asyncore.dispatcher):
 		self.owner = owner
 		asyncore.dispatcher.__init__(self)
 		self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+		
 		self.connect(("localhost", 6546))
 	def handle_connect(self):
-		print "Connected"
+	  pass
+		#print "Connected"
 	def handle_close(self):
 		print "Closed"
 		self.close()
 	def handle_read(self):
-		self.data = self.data + self.recv(8192)
+		try:
+			self.data = self.data + self.recv(8192)
+		except:
+			print """
+[ERROR] The connection to Mythfrontend failed - is it running? 
+  If so, do you have the socket interface enabled?
+  Please follow the instructions at
+    http://www.benjiegillam.com/mythpywii-installation/
+  
+  To re-try, hold down the power button on your wiimote to disconnect it.
+"""
+			self.close()
+			return
 		while len(self.data)>0:
 			a = self.data.find(self.prompt)
 			if a>-1:
@@ -57,7 +71,7 @@ class MythSocket(asyncore.dispatcher):
 				result = self.data[:a]
 				self.data = self.data[a+len(self.prompt):]
 				if not self.firstData:
-					print "<<<", result
+					print ">>>", result
 					cb = self.callbacks.pop(0)
 					if cb:
 						cb(result)
@@ -71,7 +85,7 @@ class MythSocket(asyncore.dispatcher):
 	def handle_write(self):
 		a = self.buffer.find("\n")
 		sent = self.send(self.buffer[:a+1])
-		print ">>>", self.buffer[:sent-1]
+		print "<<<", self.buffer[:sent-1]
 		self.buffer = self.buffer[sent:]
 		self.oktosend = False
 	def cmd(self, data, cb = None):
@@ -107,7 +121,7 @@ class WiiMyth:
 		return float(v - self.wii_calibration[0][axis]) / (
 		self.wii_calibration[1][axis] - self.wii_calibration[0][axis])
 	def wmconnect(self):
-		print "Please press 1&2 on the wiimote..."
+		print "Please open Mythfrontend and then press 1&2 on the wiimote..."
 		try:
 			self.wm = cwiid.Wiimote()
 		except:
@@ -117,7 +131,7 @@ class WiiMyth:
 				self.ms = None
 			return None
 		self.ms = MythSocket(self)
-		print "Connected..."
+		print "Connected to a wiimote :)"
 		self.wm.rumble=1
 		time.sleep(.2)
 		self.wm.rumble=0
@@ -281,6 +295,9 @@ class WiiMyth:
 					self.wm.rpt_mode = sum(self.reportvals[a] for a in self.report if self.report[a])
 					self.wm.enable(cwiid.FLAG_MESG_IFC | cwiid.FLAG_REPEAT_BTN)
 					self.wm.mesg_callback = self.wmcb
+				else:
+					print "Retrying... "
+					print
 			asyncore.loop(timeout=0, count=1)
 			time.sleep(0.05)
 		print "Exited Safely"
