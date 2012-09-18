@@ -42,7 +42,7 @@ class MythSocket(asyncore.dispatcher):
 		self.owner = owner
 		asyncore.dispatcher.__init__(self)
 		self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.connect(("localhost", 6546))
+		self.connect((host, 6546))
 	def handle_close(self):
 		print "Mythfrontend connection closed"
 		self.close()
@@ -303,7 +303,7 @@ class WiiMyth:
 
 def checkparams():
 	"""return mythtv host & config file"""
-	version = "d.0.1"# version Developement 0.1, benji to allocate proper number
+	version = "a.2"
 	host="localhost" #default host
 	config="~/.mythtv/wii.config" #default config file
 	help= """
