@@ -77,6 +77,13 @@ The maximum fastforward/rewind speed is 180x. The speeds are dictated by mythfro
 ###Power saving###
 Turn the wiimote off (power button) when not in use, and turn it back on by holding down 1 and 2 to make it sync. (It will turn off automatically after around 35 minutes.)
 
+# Videos
+
+[Short version](http://www.youtube.com/watch?v=Fx8uoTlZXF0)
+[Full version](http://www.youtube.com/watch?v=fqacVgG394I)
+
+(Also: my blog's old theme! URGH!)
+
 #LICENSE#
 
 [New BSD License](http://benjie.mit-license.org)
