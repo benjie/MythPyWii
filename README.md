@@ -5,6 +5,20 @@ A Wii remote (wiimote) interface to MythTV, written in Python.
 This project uses [MythFrontend's telnet interface](http://www.mythtv.org/wiki/Telnet_socket) combined with the [CWiiD](http://abstrakraft.org/cwiid/) python interface to 
 allow you to control MythTV using your Wii Remote.
 
+## Two versions?
+
+`myth_py_wii.py` is the official version, created by Benjie.
+
+`myth_py_wii.alister.py` is an enhanced version created by Alister Ware
+which supports command line options and a configuration file. (Untested
+by Benjie.)
+
+## Want to contribute?
+
+Get in touch. I can no longer maintain MythPyWii (due to no longer
+having MythTV :-( ) so if you're looking to be a maintainer, just let me
+know! If it's just a minor bugfix then send a pull request.
+
 ##Trouble shooting##
 
 ###TypeError: wmcb() takes exactly 2 arguments (3 given)###
