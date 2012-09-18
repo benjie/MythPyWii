@@ -11,11 +11,10 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-# By Benjie Gillam http://www.benjiegillam.com/mythpywii/
+# By Benjie Gillam https://github.com/benjie/MythPyWii
 
-import cwiid, time, StringIO, sys, asyncore, socket,getopt
+import cwiid, time, StringIO, sys, asyncore, socket, os, getopt
 from math import log, floor, atan, sqrt, cos, exp
-#from daemonize import daemonize
 
 # Note to self - list of good documentation:
 # cwiid: http://flx.proyectoanonimo.com/proyectos/cwiid/
@@ -43,14 +42,21 @@ class MythSocket(asyncore.dispatcher):
 		self.owner = owner
 		asyncore.dispatcher.__init__(self)
 		self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.connect(("mythtv", 6546))
-	def handle_connect(self):
-		print "Connected"
+		self.connect(("localhost", 6546))
 	def handle_close(self):
-		print "Closed"
+		print "Mythfrontend connection closed"
 		self.close()
 	def handle_read(self):
-		self.data = self.data + self.recv(8192)
+		try:
+			self.data = self.data + self.recv(8192)
+		except:
+			print """
+[ERROR] The connection to Mythfrontend failed - is it running?
+If so, do you have the socket interface enabled?
+Please follow the instructions at http://www.benjiegillam.com/mythpywii-installation/
+"""
+			self.handle_close()
+			return
 		while len(self.data)>0:
 			a = self.data.find(self.prompt)
 			if a>-1:
@@ -58,7 +64,7 @@ class MythSocket(asyncore.dispatcher):
 				result = self.data[:a]
 				self.data = self.data[a+len(self.prompt):]
 				if not self.firstData:
-					print "<<<", result
+					print ">>>", result
 					cb = self.callbacks.pop(0)
 					if cb:
 						cb(result)
@@ -72,12 +78,13 @@ class MythSocket(asyncore.dispatcher):
 	def handle_write(self):
 		a = self.buffer.find("\n")
 		sent = self.send(self.buffer[:a+1])
-		print ">>>", self.buffer[:sent-1]
+		print "<<<", self.buffer[:sent-1]
 		self.buffer = self.buffer[sent:]
 		self.oktosend = False
 	def cmd(self, data, cb = None):
 		self.buffer += data + "\n"
 		self.callbacks.append(cb)
+		self.owner.lastaction = time.time()
 	def raw(self, data):
 		cmds = data.split("\n")
 		for cmd in cmds:
@@ -98,6 +105,7 @@ class WiiMyth:
 	state = {"acc":[0, 0, 1]}
 	lasttime = 0.0
 	laststate = {}
+	lastaction = 0.0
 	responsiveness = 0.15
 	firstPress = True
 	firstPressDelay = 0.5
@@ -107,12 +115,19 @@ class WiiMyth:
 	def wii_rel(self, v, axis):
 		return float(v - self.wii_calibration[0][axis]) / (
 		self.wii_calibration[1][axis] - self.wii_calibration[0][axis])
+	def socket_disconnect(self):
+		if self.wm is not None:
+			#self.wm.led = cwiid.LED2_ON | cwiid.LED3_ON
+			print "About to close connection to the Wiimote"
+			self.wm.close()
+			self.wm = None
+		return
 	def rumble(self,delay=0.2): # rumble unit - default = 0.2 seconds
 		self.wm.rumble=1
 		time.sleep(delay)
 		self.wm.rumble=0
 	def wmconnect(self):
-		print "Please press 1&2 on the wiimote..."
+		print "Please open Mythfrontend and then press 1&2 on the wiimote..."
 		try:
 			self.wm = cwiid.Wiimote()
 		except:
@@ -121,13 +136,15 @@ class WiiMyth:
 				self.ms.close()
 				self.ms = None
 			return None
-		self.ms = MythSocket(self)
-		print "Connected..."
-		self.rumble() #use new rumble method
+		if self.ms is None:
+			self.ms = MythSocket(self)
+		print "Connected to a wiimote :)"
+		self.lastaction = time.time()
+		self.rumble()
 		# Wiimote calibration data (cache this)
 		self.wii_calibration = self.wm.get_acc_cal(cwiid.EXT_NONE)
 		return self.wm
-	def wmcb(self, messages,extra=None):
+	def wmcb(self, messages, extra=None):
 		state = self.state
 		for message in messages:
 			if message[0] == cwiid.MESG_BTN:
@@ -210,11 +227,13 @@ class WiiMyth:
 					else:
 						speed = speed - laststate['BTN_AB']
 					if speed > 0:
-						cmd += abs(speed)*"key right\n"
+						cmd += (speed / 5) * "key up\n" # Floor is automatic
+						cmd += (speed % 5) * "key right\n"
 					elif speed < 0:
-						cmd += abs(speed)*"key left\n"
+						cmd += (-speed / 5) * "key down\n" # Floor is automatic
+						cmd += (-speed % 5) * "key left\n"
 					if speed <> 0:
-						self.rumble(.5) # use new rubmle method
+						self.rumble(.05)
 					if cmd is not None and cmd:
 						self.ms.raw(cmd)
 				if state["buttons"] == cwiid.BTN_B:
@@ -232,7 +251,7 @@ class WiiMyth:
 							cmd += "key "+str(abs(speed)-1)+"\n"
 						#print cmd
 					elif laststate['BTN_B']<>speed:
-						self.rumble(.05) #use new rumble method
+						self.rumble(.05)
 						if speed == 0:
 							cmd = "play speed normal"
 						elif ((laststate['BTN_B'] > 0) and (speed > 0)) or ((laststate['BTN_B'] < 0) and (speed < 0)):
@@ -267,7 +286,18 @@ class WiiMyth:
 					self.wm.rpt_mode = sum(self.reportvals[a] for a in self.report if self.report[a])
 					self.wm.enable(cwiid.FLAG_MESG_IFC | cwiid.FLAG_REPEAT_BTN)
 					self.wm.mesg_callback = self.wmcb
+					self.lastaction = time.time()
+					os.system("xset dpms force on")
+					print("Forcing on the display")
+				else:
+					print "Retrying... "
+					print
 			asyncore.loop(timeout=0, count=1)
+			if self.lastaction < time.time() - 2100:
+				#2100 seconds is 35 minutes
+				#1200 seconds is 20 minutes
+				self.socket_disconnect()
+				print "35 minutes has passed since last action, disconnecting Wiimote"
 			time.sleep(0.05)
 		print "Exited Safely"
 
@@ -329,9 +359,7 @@ def readcfg(config):
 		pass
 	return btn_to_myth
 # Instantiate our class, and start.
-#daemonize()
 host,config=checkparams() #check paramaters for host & cfg file specification
 btn_to_myth=readcfg(config)
-#quit()
 inst = WiiMyth()
 inst.main()
