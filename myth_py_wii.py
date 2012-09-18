@@ -1,11 +1,5 @@
 #!/usr/bin/env python
 """
-MythPyWii v17
-By Benjie Gillam http://www.benjiegillam.com/mythpywii/
-
-Changelog:
-  v17: power saving code (thanks to Matthew Zimmerman)
-
 Copyright (c) 2008, Benjie Gillam
 All rights reserved.
 
@@ -17,6 +11,7 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
+# By Benjie Gillam https://github.com/benjie/MythPyWii
 
 import cwiid, time, StringIO, sys, asyncore, socket, os
 from math import log, floor, atan, sqrt, cos, exp
@@ -128,6 +123,10 @@ class WiiMyth:
 			self.wm.close()
 			self.wm = None
 		return
+	def rumble(self,delay=0.2): # rumble unit - default = 0.2 seconds
+		self.wm.rumble=1
+		time.sleep(delay)
+		self.wm.rumble=0
 	def wmconnect(self):
 		print "Please open Mythfrontend and then press 1&2 on the wiimote..."
 		try:
@@ -142,13 +141,11 @@ class WiiMyth:
 			self.ms = MythSocket(self)
 		print "Connected to a wiimote :)"
 		self.lastaction = time.time()
-		self.wm.rumble=1
-		time.sleep(.2)
-		self.wm.rumble=0
+		self.rumble()
 		# Wiimote calibration data (cache this)
 		self.wii_calibration = self.wm.get_acc_cal(cwiid.EXT_NONE)
 		return self.wm
-	def wmcb(self, messages):
+	def wmcb(self, messages, extra=None):
 		state = self.state
 		for message in messages:
 			if message[0] == cwiid.MESG_BTN:
@@ -169,8 +166,6 @@ class WiiMyth:
 			else:
 				print "Unknown message!", message
 			laststate = self.laststate
-			#print "B: %d/%d %d          \r" % (state["buttons"],self.maxButtons,self.ms.ok()),
-			#sys.stdout.flush()
 			if ('buttons' in laststate) and (laststate['buttons'] <> state['buttons']):
 				if state['buttons'] == 0:
 					self.maxButtons = 0
@@ -253,9 +248,7 @@ class WiiMyth:
 						cmd += (-speed / 5) * "key down\n" # Floor is automatic
 						cmd += (-speed % 5) * "key left\n"
 					if speed <> 0:
-						self.wm.rumble=1
-						time.sleep(.05)
-						self.wm.rumble=0
+						self.rumble(.05)
 					if cmd is not None and cmd:
 						self.ms.raw(cmd)
 				if state["buttons"] == cwiid.BTN_B:
@@ -273,9 +266,7 @@ class WiiMyth:
 							cmd += "key "+str(abs(speed)-1)+"\n"
 						#print cmd
 					elif laststate['BTN_B']<>speed:
-						self.wm.rumble=1
-						time.sleep(.05)
-						self.wm.rumble=0
+						self.rumble(.05)
 						if speed == 0:
 							cmd = "play speed normal"
 						elif ((laststate['BTN_B'] > 0) and (speed > 0)) or ((laststate['BTN_B'] < 0) and (speed < 0)):
